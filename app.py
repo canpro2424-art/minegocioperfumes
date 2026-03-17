@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
-st.set_page_config(page_title="Perfumería Business Pro", layout="wide")
+st.set_page_config(page_title="Perfumeria Pro", layout="wide")
 
 # 1. BASES DE DATOS
 for key in ['prod','cli','vnt','hist']:
@@ -18,8 +18,8 @@ def act_deuda(c_nom, concepto, cargo, abono):
         s_ant = st.session_state.cli.at[idx, "Deuda"]
         n_s = s_ant + cargo - abono
         st.session_state.cli.at[idx, "Deuda"] = n_s
-        reg = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y %H:%M"), "Cliente": c_nom, "Concepto": concepto, "Cargo": cargo, "Abono": abono, "Saldo": n_s}])
-        st.session_state.hist = pd.concat([st.session_state.hist, reg], ignore_index=True)
+        nuevo_h = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": c_nom, "Concepto": concepto, "Cargo": cargo, "Abono": abono, "Saldo": n_s}])
+        st.session_state.hist = pd.concat([st.session_state.hist, nuevo_h], ignore_index=True)
 
 # 2. NAVEGACIÓN
 t1, t2, t3, t4, t5 = st.tabs(["🛒 VENTAS", "📦 PRODUCTOS", "👥 CLIENTES", "📜 CUENTAS", "💰 CORTE"])
@@ -27,22 +27,29 @@ t1, t2, t3, t4, t5 = st.tabs(["🛒 VENTAS", "📦 PRODUCTOS", "👥 CLIENTES", 
 with t1:
     st.header("Ventas")
     if st.session_state.prod.empty:
-        st.warning("⚠️ Ve a PRODUCTOS y agrega mercadería.")
+        st.warning("Agregue productos en la pestaña PRODUCTOS primero.")
     else:
         c_a, c_b = st.columns(2)
         with c_a:
             p_sel = st.selectbox("Perfume", st.session_state.prod["Nombre"].unique())
-            cant = st.number_input("Cant.", min_value=1, value=1)
+            cant = st.number_input("Cantidad", min_value=1, value=1)
             p_idx = st.session_state.prod[st.session_state.prod["Nombre"] == p_sel].index[0]
-            total = st.session_state.prod.at[p_idx, "Venta"] * cant
-            st.markdown(f"## TOTAL: S/. {total:.2f}")
+            precio_v = st.session_state.prod.at[p_idx, "Venta"]
+            total = precio_v * cant
+            st.write("Total a cobrar: S/.", total)
             clie = st.selectbox("Cliente", ["Venta General"] + list(st.session_state.cli["Nombre"].unique()))
         with c_b:
-            efec = st.number_input("Efectivo S/.", min_value=0.0)
-            tarj = st.number_input("Yape/Tarj S/.", min_value=0.0)
+            efec = st.number_input("S/. Efectivo", min_value=0.0)
+            tarj = st.number_input("S/. Tarjeta/Yape", min_value=0.0)
             falta = total - (efec + tarj)
-            if falta > 0: st.error(f"A CRÉDITO: S/. {falta:.2f}")
-            elif falta < 0: st.success(f"VUELTO: S/. {abs(falta):.2f}")
+            if falta > 0: st.error("Falta: S/. " + str(falta))
             if st.button("COBRAR"):
                 st.session_state.prod.at[p_idx, "Stock"] -= cant
-                det = f"Ef:{efec}, Tarj
+                # Detalle de pago sin usar f-strings para evitar errores de comillas
+                det_pago = "Efe: " + str(efec) + " Tarj: " + str(tarj)
+                if falta > 0:
+                    if clie == "Venta General": st.error("No se puede fiar a Venta General")
+                    else:
+                        act_deuda(clie, "Compra de " + p_sel, falta, 0)
+                        det_pago = det_pago + " Cred: " + str(falta)
+                nv = pd.DataFrame([{"Fecha": datetime.now(), "Producto
