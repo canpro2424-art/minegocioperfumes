@@ -1,81 +1,52 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-import sqlite3
 import plotly.express as px
+from datetime import datetime
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Perfumería Business Pro", layout="wide")
+st.set_page_config(page_title="POS Perfumería Pro", layout="wide")
 
-conn = sqlite3.connect('perfumes_empresa.db', check_same_thread=False)
-c = conn.cursor()
+if 'productos' not in st.session_state:
+    st.session_state.productos = pd.DataFrame(columns=["Nombre", "Costo", "Precio Venta", "Stock", "Ganancia Unidad"])
+if 'ventas' not in st.session_state:
+    st.session_state.ventas = pd.DataFrame(columns=["Fecha", "Cliente", "Producto", "Monto", "Estado", "Metodo Pago"])
 
-c.execute('CREATE TABLE IF NOT EXISTS productos (codigo TEXT PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
-c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, total REAL, efectivo REAL, yape REAL, credito REAL, cliente TEXT, fecha TEXT)')
-c.execute('CREATE TABLE IF NOT EXISTS gastos (id INTEGER PRIMARY KEY, concepto TEXT, monto REAL, fecha TEXT)')
-conn.commit()
+st.title("🚀 POS Profesional - Gestión de Perfumería")
 
-st.sidebar.title("💎 Mi Negocio de Perfumes")
-menu = ["🛒 Ventas y Gastos", "📦 Inventario Pro", "👥 Deudas", "📊 Estadísticas"]
-choice = st.sidebar.radio("Ir a:", menu)
+st.sidebar.header("Menú Principal")
+menu = st.sidebar.radio("Navegación", ["🛒 Caja (Ventas)", "📦 Inventario", "👤 Clientes y Deudas", "📈 Análisis de Negocio"])
 
-if choice == "🛒 Ventas y Gastos":
-    tab1, tab2 = st.tabs(["🛍️ Nueva Venta", "💸 Registrar Gasto"])
-    with tab1:
-        st.subheader("Punto de Venta")
-        foto = st.camera_input("Escaneo de Cámara")
-        df_p = pd.read_sql_query("SELECT * FROM productos", conn)
-        busqueda = st.selectbox("Buscar por nombre o código:", [""] + df_p['nombre'].tolist() + df_p['codigo'].tolist())
-        if busqueda:
-            p_data = df_p[(df_p['nombre'] == busqueda) | (df_p['codigo'] == busqueda)].iloc[0]
-            st.info(f"Producto: {p_data['nombre']} | Stock: {p_data['stock']}")
-            cant = st.number_input("Cantidad", min_value=1, max_value=int(p_data['stock']), value=1)
-            total = p_data['precio'] * cant
-            st.write(f"### TOTAL: ${total:.2f}")
-            c1, c2 = st.columns(2)
-            p_efectivo = c1.number_input("Efectivo $", min_value=0.0)
-            p_yape = c2.number_input("Yape/Transf $", min_value=0.0)
-            deuda = max(0.0, total - (p_efectivo + p_yape))
-            cliente = st.text_input("Nombre del Cliente") if deuda > 0 else "Venta General"
-            if st.button("Finalizar Cobro"):
-                fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-                c.execute("INSERT INTO ventas (total, efectivo, yape, credito, cliente, fecha) VALUES (?,?,?,?,?,?)", (total, p_efectivo, p_yape, deuda, cliente, fecha))
-                c.execute("UPDATE productos SET stock = stock - ? WHERE codigo = ?", (cant, p_data['codigo']))
-                conn.commit()
-                st.success("Venta Guardada")
-                st.balloons()
-    with tab2:
-        st.subheader("Gastos")
-        concepto = st.text_input("Concepto")
-        monto_g = st.number_input("Monto $", min_value=0.1)
-        if st.button("Guardar Gasto"):
-            c.execute("INSERT INTO gastos (concepto, monto, fecha) VALUES (?,?,?)", (concepto, monto_g, datetime.now().strftime("%Y-%m-%d %H:%M")))
-            conn.commit()
-            st.success("Gasto registrado")
+if menu == "🛒 Caja (Ventas)":
+    st.header("Punto de Venta")
+    with st.form("form_venta"):
+        c1, c2 = st.columns(2)
+        with c1:
+            cliente = st.text_input("Nombre del Cliente")
+            lista_prods = st.session_state.productos[st.session_state.productos["Stock"] > 0]["Nombre"].tolist()
+            prod_sel = st.selectbox("Producto", lista_prods if lista_prods else ["Sin Stock"])
+        with c2:
+            metodo = st.selectbox("Método de Pago", ["Efectivo", "Yape/Plin", "Tarjeta"])
+            monto = st.number_input("Monto (S/.)", min_value=0.0)
+        if st.form_submit_button("✅ FINALIZAR VENTA"):
+            nueva_v = pd.DataFrame([{"Fecha": datetime.now().strftime("%d/%m/%Y"), "Cliente": cliente, "Producto": prod_sel, "Monto": monto, "Estado": "Pagado", "Metodo Pago": metodo}])
+            st.session_state.ventas = pd.concat([st.session_state.ventas, nueva_v], ignore_index=True)
+            st.success("Venta guardada")
 
-elif choice == "📦 Inventario Pro":
+elif menu == "📦 Inventario":
     st.header("Inventario")
-    with st.expander("➕ Nuevo Perfume"):
-        c_cod = st.text_input("Código")
-        c_nom = st.text_input("Nombre")
-        c_pre = st.number_input("Precio", min_value=0.0)
-        c_sto = st.number_input("Stock", min_value=0)
-        if st.button("Añadir"):
-            c.execute("INSERT OR REPLACE INTO productos VALUES (?,?,?,?)", (c_cod, c_nom, c_pre, c_sto))
-            conn.commit()
-            st.success("Registrado")
-    st.dataframe(pd.read_sql_query("SELECT * FROM productos", conn), use_container_width=True)
+    with st.form("nuevo_p"):
+        n = st.text_input("Nombre")
+        c = st.number_input("Costo", min_value=0.0)
+        v = st.number_input("Venta", min_value=0.0)
+        s = st.number_input("Stock", min_value=1)
+        if st.form_submit_button("Guardar"):
+            nuevo = pd.DataFrame([{"Nombre": n, "Costo": c, "Precio Venta": v, "Stock": s, "Ganancia Unidad": v-c}])
+            st.session_state.productos = pd.concat([st.session_state.productos, nuevo], ignore_index=True)
+    st.dataframe(st.session_state.productos)
 
-elif choice == "📊 Estadísticas":
-    st.header("Análisis de Ventas")
-    df_v = pd.read_sql_query("SELECT * FROM ventas", conn)
-    df_g = pd.read_sql_query("SELECT * FROM gastos", conn)
-    if not df_v.empty:
-        df_v['fecha'] = pd.to_datetime(df_v['fecha'])
-        resumen = df_v.groupby(df_v['fecha'].dt.date)['total'].sum().reset_index()
-        st.plotly_chart(px.bar(resumen, x='fecha', y='total', title="Ventas por Día"), use_container_width=True)
-        st.metric("Ventas Totales", f"${df_v['total'].sum():.2f}")
-        st.metric("Gastos Totales", f"-${df_g['monto'].sum():.2f}")
-        st.success(f"Ganancia Neta: ${df_v['total'].sum() - df_g['monto'].sum():.2f}")
-    else:
-        st.info("Sin datos.")
+elif menu == "👤 Clientes y Deudas":
+    st.header("Deudas")
+    st.dataframe(st.session_state.ventas)
+
+else:
+    st.header("Reportes")
+    st.metric("Ventas Totales", f"S/. {st.session_state.ventas['Monto'].sum():.2f}")
